@@ -1,23 +1,70 @@
 # MySQL Load Test
 
-This is a Java application that performs load testing on a MySQL database by inserting random student records using multiple threads.
+This is a Java application that performs load testing on a MySQL database by inserting random student records using multiple threads. The application is optimized to achieve high RPS (Requests Per Second) using connection pooling and optimized MySQL configuration.
 
 ## Prerequisites
 
 - Java 8 or higher
 - Maven
-- MySQL server running on localhost:3306
-- A MySQL database named 'test'
+- Docker
+- MySQL container running on localhost:3307
 
-## Configuration
+## MySQL Container Optimization
 
-The following parameters can be configured in `MySQLLoadTest.java`:
+To achieve high RPS (10K+), the following optimizations were applied to the MySQL container configuration at `/etc/mysql/conf.d/performance.cnf`:
 
-- `DB_URL`: JDBC URL for the MySQL database (default: "jdbc:mysql://localhost:3306/test")
-- `USER`: MySQL username (default: "root")
-- `PASS`: MySQL password (default: "root")
-- `NUM_THREADS`: Number of concurrent threads (default: 10)
-- `RECORDS_PER_THREAD`: Number of records each thread will insert (default: 10000)
+```ini
+[mysqld]
+# Connection and Thread Settings
+max_connections = 5000
+thread_cache_size = 128
+table_open_cache = 4000
+table_open_cache_instances = 16
+
+# InnoDB Buffer Pool Settings
+innodb_buffer_pool_size = 1G
+innodb_log_file_size = 256M
+innodb_log_buffer_size = 64M
+innodb_flush_log_at_trx_commit = 0
+innodb_flush_method = O_DIRECT
+innodb_thread_concurrency = 0
+innodb_io_capacity = 2000
+innodb_io_capacity_max = 4000
+
+# Performance Schema
+performance_schema = OFF
+```
+
+### Configuration Explanation
+
+1. **Connection Settings**:
+   - `max_connections = 5000`: Allows up to 5000 simultaneous connections
+   - `thread_cache_size = 128`: Caches thread handlers for better performance
+   - `table_open_cache = 4000`: Increases number of open tables cache
+
+2. **InnoDB Optimizations**:
+   - `innodb_buffer_pool_size = 1G`: Allocates 1GB for buffer pool
+   - `innodb_flush_log_at_trx_commit = 0`: Maximum performance mode (slight durability trade-off)
+   - `innodb_flush_method = O_DIRECT`: Bypasses OS cache for better I/O performance
+   - `innodb_thread_concurrency = 0`: Let InnoDB handle thread concurrency automatically
+
+## Application Configuration
+
+The Java application is optimized with:
+
+1. **Connection Pooling (HikariCP)**:
+   - Maximum pool size matches thread count
+   - Optimized pool settings for high-performance
+
+2. **Thread Configuration**:
+   - 200 concurrent threads
+   - 100,000 records per thread
+   - ThreadPoolExecutor with CallerRunsPolicy
+
+3. **JDBC URL Optimization**:
+```
+jdbc:mysql://localhost:3307/load_test?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&rewriteBatchedStatements=true&cachePrepStmts=true&useServerPrepStmts=true&useLocalSessionState=true&useLocalTransactionState=true&cacheCallableStmts=true&cacheServerConfiguration=true&elideSetAutoCommits=true
+```
 
 ## Building the Application
 
@@ -27,10 +74,10 @@ mvn clean package
 
 ## Running the Load Test
 
-1. Make sure your MySQL server is running
-2. Create a database named 'test' if it doesn't exist:
+1. Make sure your MySQL container is running with the optimized configuration
+2. Create a database named 'load_test' if it doesn't exist:
    ```sql
-   CREATE DATABASE test;
+   CREATE DATABASE load_test;
    ```
 3. Run the application:
    ```bash
@@ -40,18 +87,36 @@ mvn clean package
 ## Output
 
 The application will output:
-- Total number of successful inserts
-- Total number of failed inserts
+- Current RPS every 5 seconds
+- Total successful inserts
+- Total failed inserts
 - Test duration in seconds
-- Requests per second (RPS)
+- Average RPS achieved
 
 ## Table Structure
 
-The application will create a table named 'students' with the following structure:
+The application creates a table named 'students' with the following structure:
 ```sql
 CREATE TABLE students (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100),
     age INT
-);
-``` 
+) ENGINE=InnoDB;
+```
+
+## Performance Monitoring
+
+The application provides real-time RPS monitoring every 5 seconds during the test execution. This helps in:
+- Monitoring current performance
+- Identifying performance patterns
+- Detecting performance degradation
+- Verifying if target RPS is achieved
+
+## Troubleshooting
+
+If you're not achieving the target RPS:
+1. Check MySQL error log for potential issues
+2. Verify system resources (CPU, Memory, Disk I/O)
+3. Adjust thread count and records per thread
+4. Consider increasing innodb_buffer_pool_size if memory allows
+5. Monitor system swap usage 
